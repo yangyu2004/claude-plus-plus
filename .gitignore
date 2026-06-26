@@ -1,0 +1,7 @@
+*.sqlite
+*.sqlite-wal
+*.sqlite-shm
+.claude-history-rescue/
+node_modules/
+dist/
+.tmp/

@@ -1,0 +1,53 @@
+{
+  "conversations": [
+    {
+      "id": "conv_1",
+      "title": "项目恢复方案",
+      "created_at": "2025-06-01T08:00:00Z",
+      "updated_at": "2025-06-01T09:00:00Z",
+      "messages": [
+        {
+          "id": "msg_1",
+          "role": "user",
+          "created_at": "2025-06-01T08:00:00Z",
+          "content": "我有一份 Claude 导出，想把它重新索引起来。"
+        },
+        {
+          "id": "msg_2",
+          "role": "assistant",
+          "created_at": "2025-06-01T08:01:00Z",
+          "content": [
+            {
+              "type": "thinking",
+              "thinking": "这里是 Claude 导出的内部思考，不应该写入桌面端可见正文。"
+            },
+            {
+              "type": "text",
+              "text": "可以先导入本地 SQLite，再用本地 UI 浏览。"
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "id": "conv_2",
+      "title": "对话恢复限制",
+      "created_at": "2025-06-02T08:00:00Z",
+      "updated_at": "2025-06-02T09:00:00Z",
+      "messages": [
+        {
+          "id": "msg_3",
+          "role": "user",
+          "created_at": "2025-06-02T08:00:00Z",
+          "content": "网页版能直接写回服务端列表吗？"
+        },
+        {
+          "id": "msg_4",
+          "role": "assistant",
+          "created_at": "2025-06-02T08:02:00Z",
+          "content": "不能，只能本地索引和重建新会话。"
+        }
+      ]
+    }
+  ]
+}
