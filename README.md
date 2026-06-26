@@ -1,37 +1,32 @@
 # Claude++
+中文 | [English](./README_EN.md)
 
-中文:
+Claude++ 是一个终端优先的 Claude 导出恢复工具。它把官方导出的 ZIP 读入本地 SQLite，导出 Markdown，生成续写提示，并重建 Claude Desktop 可识别的本地会话文件。
 
-Claude++ 是一个终端优先的 Claude 导出恢复工具。它可以把官方导出的 ZIP 读入本地 SQLite，导出 Markdown，生成续写提示，并把对话恢复成 Claude Desktop 可识别的本地会话文件。
+## 主要功能
 
-English:
+- 导入官方 Claude 导出 ZIP 到本地数据库
+- 按标题、正文、项目名搜索
+- 导出对话为 Markdown
+- 生成手动续写提示
+- 读取项目、记忆和用户元数据
+- 生成 Claude Desktop 本地会话文件
 
-Claude++ is a terminal-first recovery tool for Claude exports. It imports official export ZIPs into local SQLite, exports Markdown, generates rehydration prompts, and rebuilds local session files that Claude Desktop can read.
+## 不做什么
 
-## 功能 / What it does
+- 不会把对话写回 Claude 的服务器历史
+- 不会恢复原始的服务器端对话 ID 或时间戳
+- 不会使用私有或未公开的 Claude API
+- 不会修改 Claude Web 的服务器端对话列表
 
-- 导入官方 Claude 导出 ZIP 到本地数据库 / Import official Claude export ZIPs into a local database
-- 按标题、正文、项目名搜索 / Search titles, message bodies, and project names
-- 导出对话为 Markdown / Export conversations to Markdown
-- 生成手动续写提示 / Generate prompts for starting a fresh follow-up chat
-- 读取项目、记忆和用户元数据 / Import projects, memories, and user metadata
-- 生成 Claude Desktop 本地会话文件 / Create Claude Desktop local-session files from an official export
-
-## 不做什么 / What it does not do
-
-- 不会把对话写回 Claude 的服务器历史 / It does not write back to Claude's server-side history
-- 不会恢复原始的服务器端对话 ID 或时间戳 / It does not restore original server-side IDs or timestamps
-- 不会使用私有或未公开的 Claude API / It does not use private or undocumented Claude APIs
-- 不会修改 Claude Web 的服务器端对话列表 / It cannot update Claude Web's server-side conversation list
-
-## 安装 / Install
+## 安装
 
 ```bash
 cd claude-history-rescue-web
 npm install
 ```
 
-## 用法 / Usage
+## 用法
 
 ```bash
 claude-history-rescue-web import ~/Downloads/claude-export.zip
@@ -49,13 +44,13 @@ claude-history-rescue-web desktop-restore ~/Downloads/claude-export.zip --write
 
 ## Claude Desktop restore
 
-`desktop-restore` reads an official Claude export ZIP and creates local Claude Desktop session files under:
+`desktop-restore` 读取官方 Claude 导出 ZIP，并在以下目录创建本地会话文件：
 
 ```bash
 ~/Library/Application Support/Claude-3p/local-agent-mode-sessions
 ```
 
-By default it is a dry run. Add `--write` to create `local_<uuid>.json`, the matching session directory, `.claude/.claude.json`, `outputs/`, `uploads/`, a Claude Desktop-style `audit.jsonl`, and the `.claude/projects/imported/*.jsonl` transcript used by the conversation view. Add `--overwrite` to rebuild sessions that were already restored.
+默认是 dry run。加上 `--write` 后，会创建 `local_<uuid>.json`、匹配的 session 目录、`.claude/.claude.json`、`outputs/`、`uploads/`、Claude Desktop 风格的 `audit.jsonl`，以及 `.claude/projects/imported/*.jsonl` transcript。加上 `--overwrite` 可重建已恢复的会话。
 
 ```bash
 claude-history-rescue-web desktop-restore ~/Downloads/claude-export.zip --limit 3
@@ -63,10 +58,10 @@ claude-history-rescue-web desktop-restore ~/Downloads/claude-export.zip --write
 claude-history-rescue-web desktop-restore ~/Downloads/claude-export.zip --write --overwrite
 ```
 
-If new items do not appear in Claude Desktop's sidebar after restart, quit Claude Desktop and run:
+如果重启后 Claude Desktop 侧边栏没有出现新条目，退出 Claude Desktop 后执行：
 
 ```bash
 claude-history-rescue-web desktop-restore ~/Downloads/claude-export.zip --write --update-read-state
 ```
 
-The read-state index lives in Electron Local Storage and is locked while Claude Desktop is running. The tool backs up overwritten session files and read-state values under `.claude-history-rescue/backups/`.
+read-state 索引存放在 Electron Local Storage，Claude Desktop 运行时会被锁定。工具会把被覆盖的 session 文件和 read-state 值备份到 `.claude-history-rescue/backups/`。
