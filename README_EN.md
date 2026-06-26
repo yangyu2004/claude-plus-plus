@@ -3,6 +3,12 @@
 
 Claude++ is a terminal-first recovery tool for Claude exports. It imports official export ZIPs into local SQLite, exports Markdown, generates rehydration prompts, and rebuilds local session files that Claude Desktop can read.
 
+## Background
+
+Claude conversations are easy to accumulate and hard to reuse. You can keep talking inside the product, but exporting, searching, reorganizing, and reusing older conversations is awkward. Official exports help with backups, but they are closer to raw data dumps than to a working archive.
+
+Claude++ was built to close that gap. It turns official exports into a local archive you can query, export, and rebuild from the terminal, so recovery and reuse stay fast even when the web UI is not the workflow you want.
+
 ## Highlights
 
 - Import official Claude export ZIPs into a local database
