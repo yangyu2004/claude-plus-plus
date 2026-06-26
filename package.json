@@ -1,7 +1,7 @@
 {
   "name": "claude-plus-plus",
   "version": "0.1.0",
-  "description": "Import Claude export ZIPs into a local searchable archive with a web viewer and Markdown export.",
+  "description": "Claude++ imports Claude export ZIPs into local SQLite, exports Markdown, and restores local session files from the terminal.",
   "type": "module",
   "bin": {
     "claude-history-rescue-web": "./bin/cli.js"

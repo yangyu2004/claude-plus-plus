@@ -9,7 +9,6 @@ import { extractConversationsFromDocuments } from '../src/import/normalize.js';
 import { openDatabase, listConversations, getConversation, countConversations, listProjects, countProjects, getProject, getLatestImport, getImportMetadata } from '../src/db/database.js';
 import { conversationToMarkdown } from '../src/render/markdown.js';
 import { buildResumePrompt } from '../src/rehydrate/build-summary-prompt.js';
-import { createAppServer } from '../src/app/server.js';
 import { importArchiveFromBuffer } from '../src/import/import-archive.js';
 import { fileURLToPath } from 'node:url';
 
@@ -47,17 +46,21 @@ test('imports conversations from an export zip', () => {
   assert.match(buildResumePrompt(detail), /Original conversation id: conv_1/);
 });
 
-test('serves HTML and conversation api', async () => {
+test('serves api and export endpoints', async () => {
   const { tempDir, zipPath } = makeFixtureZip();
   const database = openDatabase(path.join(tempDir, 'history.sqlite'));
   importArchiveFromBuffer(database, fs.readFileSync(zipPath), 'export.zip');
 
+  const { createAppServer } = await import('../src/app/server.js');
   const app = createAppServer({ database, port: 0 });
   const address = await app.listen();
   const response = await fetch(`http://127.0.0.1:${address.port}/api/conversations`);
   const payload = await response.json();
   assert.equal(response.status, 200);
   assert.equal(payload.conversations.length, 2);
+  const exportResponse = await fetch(`http://127.0.0.1:${address.port}/export/all`);
+  assert.equal(exportResponse.status, 200);
+  assert.match(exportResponse.headers.get('content-type') || '', /text\/markdown/);
   await app.close();
 });
 
@@ -82,6 +85,7 @@ test('tracks project archive metadata', async () => {
   assert.equal(Array.isArray(metadata.usersJson) || typeof metadata.usersJson === 'object', true);
   assert.equal(Array.isArray(metadata.memoriesJson), true);
 
+  const { createAppServer } = await import('../src/app/server.js');
   const app = createAppServer({ database, port: 0 });
   const address = await app.listen();
   const overview = await fetch(`http://127.0.0.1:${address.port}/api/overview`).then((res) => res.json());

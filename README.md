@@ -1,32 +1,37 @@
-# Claude History Rescue Web
+# Claude++
 
-Import a Claude export ZIP into a local SQLite archive, browse it in a local web UI, export Markdown, and generate a rehydration prompt for starting a fresh conversation.
+中文:
 
-## What this does
+Claude++ 是一个终端优先的 Claude 导出恢复工具。它可以把官方导出的 ZIP 读入本地 SQLite，导出 Markdown，生成续写提示，并把对话恢复成 Claude Desktop 可识别的本地会话文件。
 
-- Imports official Claude export ZIPs into a local database
-- Shows a left-sidebar conversation list in a local web viewer
-- Supports search across titles and message bodies
-- Exports conversations to Markdown
-- Generates a prompt for manually resuming a conversation in a new chat
-- Imports project archives, memories, and user metadata from the export ZIP
-- Can create Claude Desktop local-agent session files from an official export so imported chats can appear in the desktop sidebar
+English:
 
-## What this does not do
+Claude++ is a terminal-first recovery tool for Claude exports. It imports official export ZIPs into local SQLite, exports Markdown, generates rehydration prompts, and rebuilds local session files that Claude Desktop can read.
 
-- It does not write conversations back into Claude's server-side history
-- It does not restore original server-side conversation IDs or timestamps in the Claude web app
-- It does not use private or undocumented Claude APIs
-- It cannot update Claude Web's server-side conversation list
+## 功能 / What it does
 
-## Install
+- 导入官方 Claude 导出 ZIP 到本地数据库 / Import official Claude export ZIPs into a local database
+- 按标题、正文、项目名搜索 / Search titles, message bodies, and project names
+- 导出对话为 Markdown / Export conversations to Markdown
+- 生成手动续写提示 / Generate prompts for starting a fresh follow-up chat
+- 读取项目、记忆和用户元数据 / Import projects, memories, and user metadata
+- 生成 Claude Desktop 本地会话文件 / Create Claude Desktop local-session files from an official export
+
+## 不做什么 / What it does not do
+
+- 不会把对话写回 Claude 的服务器历史 / It does not write back to Claude's server-side history
+- 不会恢复原始的服务器端对话 ID 或时间戳 / It does not restore original server-side IDs or timestamps
+- 不会使用私有或未公开的 Claude API / It does not use private or undocumented Claude APIs
+- 不会修改 Claude Web 的服务器端对话列表 / It cannot update Claude Web's server-side conversation list
+
+## 安装 / Install
 
 ```bash
 cd claude-history-rescue-web
 npm install
 ```
 
-## Usage
+## 用法 / Usage
 
 ```bash
 claude-history-rescue-web import ~/Downloads/claude-export.zip
@@ -39,12 +44,12 @@ claude-history-rescue-web desktop-restore ~/Downloads/claude-export.zip
 claude-history-rescue-web desktop-restore ~/Downloads/claude-export.zip --write
 ```
 
-The local database is stored at `./.claude-history-rescue/history.sqlite` by default.
-Open the local viewer at `http://127.0.0.1:8787`.
+默认数据库路径是 `./.claude-history-rescue/history.sqlite`。
+`serve` 提供 JSON 和 Markdown 接口，适合终端和脚本集成。
 
 ## Claude Desktop restore
 
-`desktop-restore` reads an official Claude export ZIP and creates local Claude Desktop agent-session files under:
+`desktop-restore` reads an official Claude export ZIP and creates local Claude Desktop session files under:
 
 ```bash
 ~/Library/Application Support/Claude-3p/local-agent-mode-sessions
