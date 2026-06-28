@@ -1,7 +1,7 @@
 # Claude++
 [中文](./README.md) | English
 
-Claude++ is a terminal-first recovery tool for Claude exports. It imports official export ZIPs into local SQLite, exports Markdown, generates rehydration prompts, and rebuilds local session files that Claude Desktop can read.
+Claude++ is a terminal-first recovery tool for Claude exports. It imports official export ZIPs into local SQLite, exports Markdown, generates rehydration prompts, and rebuilds local session files that Claude Desktop can read. It now supports both the relay/Claude-3p layout and the official-account Claude Desktop layout.
 
 ## Background
 
@@ -17,6 +17,7 @@ Claude++ was built to close that gap. It turns official exports into a local arc
 - Generate prompts for starting a fresh follow-up chat
 - Import projects, memories, and user metadata
 - Create Claude Desktop local-session files from an official export
+- Support both relay Claude Desktop and official-account Claude Desktop restore modes
 
 ## What it does not do
 
@@ -43,12 +44,20 @@ claude-history-rescue-web export --out ./archive
 claude-history-rescue-web rehydrate --id conv_1 --out prompt.md
 claude-history-rescue-web desktop-restore ~/Downloads/claude-export.zip
 claude-history-rescue-web desktop-restore ~/Downloads/claude-export.zip --write
+claude-history-rescue-web desktop-restore-official ~/Downloads/claude-export.zip --write --cwd ~/Desktop/Claude
 ```
 
 The default database path is `./.claude-history-rescue/history.sqlite`.
 `serve` exposes JSON and Markdown endpoints for terminal workflows and integrations.
 
 ## Claude Desktop restore
+
+Claude++ has two desktop restore variants:
+
+- `desktop-restore`: relay version for `Claude-3p/local-agent-mode-sessions`
+- `desktop-restore-official`: official-account version for `Claude/claude-code-sessions` and `~/.claude/projects`
+
+### Relay version
 
 `desktop-restore` reads an official Claude export ZIP and creates local Claude Desktop session files under:
 
@@ -71,3 +80,22 @@ claude-history-rescue-web desktop-restore ~/Downloads/claude-export.zip --write 
 ```
 
 The read-state index lives in Electron Local Storage and is locked while Claude Desktop is running. The tool backs up overwritten session files and read-state values under `.claude-history-rescue/backups/`.
+
+### Official-account version
+
+`desktop-restore-official` reads an official Claude export ZIP and writes the current official Claude Desktop local layout:
+
+```bash
+~/Library/Application Support/Claude/claude-code-sessions
+~/.claude/projects
+```
+
+It writes `local_<uuid>.json` session metadata plus the matching `.jsonl` transcript. This version cleans export-only noise such as `thinking`, `tool_use`, and `tool_result`, keeping only readable user and assistant text.
+
+```bash
+claude-history-rescue-web desktop-restore-official ~/Downloads/claude-export.zip --limit 3
+claude-history-rescue-web desktop-restore-official ~/Downloads/claude-export.zip --write --cwd ~/Desktop/Claude
+claude-history-rescue-web desktop-restore-official ~/Downloads/claude-export.zip --write --overwrite --cwd ~/Desktop/Claude
+```
+
+`--cwd` controls the escaped project directory under `~/.claude/projects`. Use the same working directory you normally use in Claude Desktop. After writing, fully quit Claude Desktop and reopen it so the sidebar rescans local sessions.

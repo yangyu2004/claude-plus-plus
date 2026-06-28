@@ -20,6 +20,7 @@ import { conversationToMarkdown } from '../src/render/markdown.js';
 import { buildResumePrompt } from '../src/rehydrate/build-summary-prompt.js';
 import { createAppServer } from '../src/app/server.js';
 import { applyDesktopRestorePlan, buildDesktopRestorePlan } from '../src/desktop/restore.js';
+import { applyOfficialDesktopRestorePlan, buildOfficialDesktopRestorePlan } from '../src/desktop/official-restore.js';
 
 function printUsage() {
   process.stdout.write(`claude-history-rescue-web
@@ -32,6 +33,8 @@ Usage:
   claude-history-rescue-web serve [--db <path>] [--port <port>]
   claude-history-rescue-web rehydrate --id <conversationId> [--db <path>] [--out <file>]
   claude-history-rescue-web desktop-restore <export.zip> [--write] [--limit <n>] [--data-dir <dir>] [--session-root <dir>] [--update-read-state]
+  claude-history-rescue-web desktop-restore-3p <export.zip> [--write] [--limit <n>] [--data-dir <dir>] [--session-root <dir>] [--update-read-state]
+  claude-history-rescue-web desktop-restore-official <export.zip> [--write] [--limit <n>] [--cwd <dir>] [--data-dir <dir>] [--projects-dir <dir>] [--session-root <dir>] [--overwrite]
 `);
 }
 
@@ -172,7 +175,7 @@ async function main() {
     return;
   }
 
-  if (command === 'desktop-restore') {
+  if (command === 'desktop-restore' || command === 'desktop-restore-3p') {
     const zipPath = positionals[0];
     if (!zipPath) throw new Error('Missing export zip path');
 
@@ -219,6 +222,61 @@ async function main() {
       dryRun: false,
       target: result.target,
       backupDir: result.backupDir,
+      written: result.written,
+      readState: result.readState
+    }, null, 2) + '\n');
+    return;
+  }
+
+  if (command === 'desktop-restore-official') {
+    const zipPath = positionals[0];
+    if (!zipPath) throw new Error('Missing export zip path');
+
+    const documents = readClaudeExportZip(path.resolve(baseDir, zipPath));
+    const conversations = extractConversationsFromDocuments(documents);
+    const limit = options.limit ? Number(options.limit) : undefined;
+    if (limit !== undefined && (!Number.isFinite(limit) || limit <= 0)) {
+      throw new Error('--limit must be a positive number');
+    }
+
+    const plan = buildOfficialDesktopRestorePlan(conversations, {
+      cwd: options.cwd ? path.resolve(baseDir, options.cwd) : undefined,
+      dataDir: options['data-dir'],
+      projectsDir: options['projects-dir'],
+      sessionRoot: options['session-root'],
+      limit
+    });
+
+    if (!options.write) {
+      process.stdout.write(JSON.stringify({
+        dryRun: true,
+        hint: 'Add --write to create official Claude Desktop local session files, then fully quit and reopen Claude Desktop so the sidebar rescans.',
+        target: plan.target,
+        totalConversations: plan.totalConversations,
+        skippedEmpty: plan.skippedEmpty,
+        restoreCount: plan.restoreCount,
+        existingCount: plan.existingCount,
+        firstEntries: plan.entries.slice(0, 5).map((entry) => ({
+          sessionId: entry.sessionId,
+          cliSessionId: entry.cliSessionId,
+          title: entry.title,
+          metadataPath: entry.metadataPath,
+          transcriptPath: entry.transcriptPath,
+          exists: entry.exists
+        }))
+      }, null, 2) + '\n');
+      return;
+    }
+
+    const result = await applyOfficialDesktopRestorePlan(plan, {
+      overwrite: Boolean(options.overwrite)
+    });
+
+    process.stdout.write(JSON.stringify({
+      dryRun: false,
+      target: result.target,
+      restoreCount: plan.restoreCount,
+      skippedEmpty: plan.skippedEmpty,
       written: result.written,
       readState: result.readState
     }, null, 2) + '\n');
