@@ -21,6 +21,7 @@ import { buildResumePrompt } from '../src/rehydrate/build-summary-prompt.js';
 import { createAppServer } from '../src/app/server.js';
 import { applyDesktopRestorePlan, buildDesktopRestorePlan } from '../src/desktop/restore.js';
 import { applyOfficialDesktopRestorePlan, buildOfficialDesktopRestorePlan } from '../src/desktop/official-restore.js';
+import { applyCodexRestorePlan, buildCodexRestorePlan } from '../src/codex/restore.js';
 
 function printUsage() {
   process.stdout.write(`claude-history-rescue-web
@@ -35,6 +36,7 @@ Usage:
   claude-history-rescue-web desktop-restore <export.zip> [--write] [--limit <n>] [--data-dir <dir>] [--session-root <dir>] [--update-read-state]
   claude-history-rescue-web desktop-restore-3p <export.zip> [--write] [--limit <n>] [--data-dir <dir>] [--session-root <dir>] [--update-read-state]
   claude-history-rescue-web desktop-restore-official <export.zip> [--write] [--limit <n>] [--cwd <dir>] [--data-dir <dir>] [--projects-dir <dir>] [--session-root <dir>] [--overwrite]
+  claude-history-rescue-web codex-restore <export.zip> [--write] [--limit <n>] [--codex-home <dir>] [--cwd <dir>] [--overwrite]
 `);
 }
 
@@ -279,6 +281,62 @@ async function main() {
       skippedEmpty: plan.skippedEmpty,
       written: result.written,
       readState: result.readState
+    }, null, 2) + '\n');
+    return;
+  }
+
+  if (command === 'codex-restore') {
+    const zipPath = positionals[0];
+    if (!zipPath) throw new Error('Missing export zip path');
+
+    const documents = readClaudeExportZip(path.resolve(baseDir, zipPath));
+    const conversations = extractConversationsFromDocuments(documents);
+    const limit = options.limit ? Number(options.limit) : undefined;
+    if (limit !== undefined && (!Number.isFinite(limit) || limit <= 0)) {
+      throw new Error('--limit must be a positive number');
+    }
+
+    const plan = buildCodexRestorePlan(conversations, {
+      codexHome: options['codex-home'],
+      cwd: options.cwd ? path.resolve(baseDir, options.cwd) : undefined,
+      stateDbPath: options['state-db'],
+      sessionsDir: options['sessions-dir'],
+      sessionIndexPath: options['session-index'],
+      limit
+    });
+
+    if (!options.write) {
+      process.stdout.write(JSON.stringify({
+        dryRun: true,
+        hint: 'Add --write after quitting Codex Desktop to create Codex rollout files and sidebar thread rows.',
+        target: plan.target,
+        totalConversations: plan.totalConversations,
+        skippedEmpty: plan.skippedEmpty,
+        restoreCount: plan.restoreCount,
+        existingCount: plan.existingCount,
+        firstEntries: plan.entries.slice(0, 5).map((entry) => ({
+          threadId: entry.threadId,
+          title: entry.title,
+          rolloutPath: entry.rolloutPath,
+          exists: entry.exists
+        }))
+      }, null, 2) + '\n');
+      return;
+    }
+
+    const result = await applyCodexRestorePlan(plan, {
+      overwrite: Boolean(options.overwrite),
+      backupDir: options['backup-dir'] ? path.resolve(baseDir, options['backup-dir']) : undefined
+    });
+
+    process.stdout.write(JSON.stringify({
+      dryRun: false,
+      target: result.target,
+      backupDir: result.backupDir,
+      restoreCount: plan.restoreCount,
+      skippedEmpty: plan.skippedEmpty,
+      written: result.written,
+      indexed: result.indexed
     }, null, 2) + '\n');
     return;
   }

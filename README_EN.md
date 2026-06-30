@@ -1,7 +1,7 @@
 # Claude++
 [中文](./README.md) | English
 
-Claude++ is a terminal-first recovery tool for Claude exports. It imports official export ZIPs into local SQLite, exports Markdown, generates rehydration prompts, and rebuilds local session files that Claude Desktop can read. It now supports both the relay/Claude-3p layout and the official-account Claude Desktop layout.
+Claude++ is a terminal-first recovery tool for Claude exports. It imports official export ZIPs into local SQLite, exports Markdown, generates rehydration prompts, and rebuilds local session files that Claude Desktop or Codex Desktop can read. It now supports the relay Claude Desktop layout, the official-account Claude Desktop layout, and the Codex Desktop sidebar layout.
 
 ## Background
 
@@ -17,7 +17,8 @@ Claude++ was built to close that gap. It turns official exports into a local arc
 - Generate prompts for starting a fresh follow-up chat
 - Import projects, memories, and user metadata
 - Create Claude Desktop local-session files from an official export
-- Support both relay Claude Desktop and official-account Claude Desktop restore modes
+- Create Codex Desktop rollout files and sidebar thread index rows
+- Support relay Claude Desktop, official-account Claude Desktop, and Codex Desktop restore modes
 
 ## What it does not do
 
@@ -25,6 +26,7 @@ Claude++ was built to close that gap. It turns official exports into a local arc
 - It does not restore original server-side IDs or timestamps
 - It does not use private or undocumented Claude APIs
 - It cannot update Claude Web's server-side conversation list
+- It does not write Claude history back to OpenAI/Codex server-side history
 
 ## Install
 
@@ -45,17 +47,19 @@ claude-history-rescue-web rehydrate --id conv_1 --out prompt.md
 claude-history-rescue-web desktop-restore ~/Downloads/claude-export.zip
 claude-history-rescue-web desktop-restore ~/Downloads/claude-export.zip --write
 claude-history-rescue-web desktop-restore-official ~/Downloads/claude-export.zip --write --cwd ~/Desktop/Claude
+claude-history-rescue-web codex-restore ~/Downloads/claude-export.zip --write --cwd ~/Documents/Work
 ```
 
 The default database path is `./.claude-history-rescue/history.sqlite`.
 `serve` exposes JSON and Markdown endpoints for terminal workflows and integrations.
 
-## Claude Desktop restore
+## Desktop restore
 
-Claude++ has two desktop restore variants:
+Claude++ has three desktop restore variants:
 
 - `desktop-restore`: relay version for `Claude-3p/local-agent-mode-sessions`
 - `desktop-restore-official`: official-account version for `Claude/claude-code-sessions` and `~/.claude/projects`
+- `codex-restore`: Codex Desktop version for `~/.codex/sessions` and `~/.codex/state_5.sqlite`
 
 ### Relay version
 
@@ -99,3 +103,23 @@ claude-history-rescue-web desktop-restore-official ~/Downloads/claude-export.zip
 ```
 
 `--cwd` controls the escaped project directory under `~/.claude/projects`. Use the same working directory you normally use in Claude Desktop. After writing, fully quit Claude Desktop and reopen it so the sidebar rescans local sessions.
+
+### Codex Desktop version
+
+`codex-restore` reads an official Claude export ZIP and writes the local layout used by Codex Desktop:
+
+```bash
+~/.codex/sessions
+~/.codex/state_5.sqlite
+~/.codex/session_index.jsonl
+```
+
+It creates a Codex rollout `.jsonl` for each Claude conversation, then inserts the matching row into the `threads` table so the conversation appears in the Codex Desktop sidebar. Opening the restored thread shows readable user and assistant text; export-only noise such as `thinking`, `tool_use`, and `tool_result` is filtered out.
+
+```bash
+claude-history-rescue-web codex-restore ~/Downloads/claude-export.zip --limit 3
+claude-history-rescue-web codex-restore ~/Downloads/claude-export.zip --write --cwd ~/Documents/Work
+claude-history-rescue-web codex-restore ~/Downloads/claude-export.zip --write --overwrite --cwd ~/Documents/Work
+```
+
+By default this is a dry run. Before writing, fully quit Codex Desktop because `state_5.sqlite` may be locked by the app. The tool backs up `state_5.sqlite`, WAL/SHM files, and `session_index.jsonl` under `~/.codex/.claude-plus-plus-backups/` before writing. `--cwd` controls the working directory stored on the imported Codex threads.
