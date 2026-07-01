@@ -1,4 +1,5 @@
 import AdmZip from 'adm-zip';
+import path from 'node:path';
 import { readJsonSafe } from '../core.js';
 
 const DEFAULT_MAX_ENTRIES = 5000;
@@ -18,6 +19,22 @@ function parseJsonLines(raw) {
 
 function entrySize(entry) {
   return Number(entry.header?.size || 0);
+}
+
+function sanitizeEntryName(entryName) {
+  if (entryName.includes('..')) {
+    throw new Error(`Export zip entry contains path traversal: ${entryName}`);
+  }
+  if (path.isAbsolute(entryName)) {
+    throw new Error(`Export zip entry is an absolute path: ${entryName}`);
+  }
+  if (entryName.startsWith('/') || entryName.startsWith('\\')) {
+    throw new Error(`Export zip entry starts with a path separator: ${entryName}`);
+  }
+  if (entryName.includes('\\')) {
+    throw new Error(`Export zip entry contains backslash path separator: ${entryName}`);
+  }
+  return entryName;
 }
 
 function validateEntries(entries, {
@@ -50,11 +67,12 @@ export function readClaudeExportZip(zipPath, options = {}) {
 
   return entries.flatMap((entry) => {
     const raw = zip.readAsText(entry, 'utf8');
-    const lowerName = entry.entryName.toLowerCase();
+    const safeName = sanitizeEntryName(entry.entryName);
+    const lowerName = safeName.toLowerCase();
 
     if (lowerName.endsWith('.jsonl') || lowerName.endsWith('.ndjson')) {
       return parseJsonLines(raw).map((json, lineIndex) => ({
-        path: `${entry.entryName}#${lineIndex + 1}`,
+        path: `${safeName}#${lineIndex + 1}`,
         raw,
         json
       }));
@@ -62,7 +80,7 @@ export function readClaudeExportZip(zipPath, options = {}) {
 
     if (lowerName.endsWith('.json') || lowerName.endsWith('.txt')) {
       const json = readJsonSafe(raw, null);
-      return json === null ? [] : [{ path: entry.entryName, raw, json }];
+      return json === null ? [] : [{ path: safeName, raw, json }];
     }
 
     return [];

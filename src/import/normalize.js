@@ -21,6 +21,9 @@ function normalizeRole(sender) {
   return MESSAGE_ROLE_HINTS[candidate] || 'unknown';
 }
 
+const MAX_TEXT_DEPTH = 6;
+const MAX_EXTRACTED_TITLE_LENGTH = 80;
+
 function collectText(value, depth = 0) {
   if (value === null || value === undefined) return '';
   if (typeof value === 'string') return value.trim();
@@ -28,7 +31,7 @@ function collectText(value, depth = 0) {
   if (Array.isArray(value)) {
     return value.map((entry) => collectText(entry, depth + 1)).filter(Boolean).join('\n').trim();
   }
-  if (!isObject(value) || depth > 6) return '';
+  if (!isObject(value) || depth > MAX_TEXT_DEPTH) return '';
 
   const preferredKeys = ['text', 'content', 'value', 'message', 'summary', 'body', 'transcript', 'prompt', 'response'];
   const preferred = preferredKeys.map((key) => value[key]).filter((entry) => entry !== undefined);
@@ -109,7 +112,7 @@ function extractTitle(rawConversation, messages) {
 
   const firstUserMessage = messages.find((message) => message.role === 'user' && message.content);
   if (firstUserMessage?.content) {
-    return firstUserMessage.content.split('\n').map((line) => line.trim()).filter(Boolean)[0].slice(0, 80);
+    return firstUserMessage.content.split('\n').map((line) => line.trim()).filter(Boolean)[0].slice(0, MAX_EXTRACTED_TITLE_LENGTH);
   }
 
   return 'Untitled conversation';

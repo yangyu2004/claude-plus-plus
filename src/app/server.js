@@ -6,6 +6,40 @@ import { importArchiveFromBuffer } from '../import/import-archive.js';
 
 const DEFAULT_HOST = '127.0.0.1';
 const DEFAULT_IMPORT_MAX_BYTES = 512 * 1024 * 1024;
+const DEFAULT_API_LIST_LIMIT = 1000;
+const DEFAULT_API_EXPORT_LIMIT = 10000;
+const MAX_SUMMARY_FILE_NAME_LENGTH = 80;
+
+let importTokenWarningLogged = false;
+
+function isLocalhost(req) {
+  const remoteAddress = req.socket?.remoteAddress || '';
+  return remoteAddress === '127.0.0.1' || remoteAddress === '::1' || remoteAddress === '::ffff:127.0.0.1';
+}
+
+function verifyImportToken(req) {
+  const expectedToken = process.env.CLAUDE_PLUS_PLUS_IMPORT_TOKEN;
+  if (!expectedToken) {
+    if (!importTokenWarningLogged) {
+      importTokenWarningLogged = true;
+      process.stderr.write(
+        '[WARN] CLAUDE_PLUS_PLUS_IMPORT_TOKEN is not set. /import is accessible from localhost without authentication.\n'
+      );
+    }
+    return true;
+  }
+
+  const providedToken = req.headers['x-import-token'];
+  if (providedToken !== expectedToken) {
+    return false;
+  }
+
+  return true;
+}
+
+function writeImportUnauthorized(res, { corsOrigin = null } = {}) {
+  writeJson(res, 401, { error: 'Unauthorized: missing or invalid x-import-token header' }, { corsOrigin });
+}
 
 function corsHeaders(corsOrigin) {
   if (!corsOrigin) return {};
@@ -20,7 +54,7 @@ function writeJson(res, statusCode, payload, { corsOrigin = null } = {}) {
   res.writeHead(statusCode, {
     'content-type': 'application/json; charset=utf-8',
     'access-control-allow-methods': 'GET, POST, OPTIONS',
-    'access-control-allow-headers': 'content-type, x-filename',
+    'access-control-allow-headers': 'content-type, x-filename, x-import-token',
     ...corsHeaders(corsOrigin)
   });
   res.end(JSON.stringify(payload));
@@ -29,7 +63,7 @@ function writeJson(res, statusCode, payload, { corsOrigin = null } = {}) {
 function writeCorsPreflight(res, { corsOrigin = null } = {}) {
   res.writeHead(204, {
     'access-control-allow-methods': 'GET, POST, OPTIONS',
-    'access-control-allow-headers': 'content-type, x-filename',
+    'access-control-allow-headers': 'content-type, x-filename, x-import-token',
     'access-control-max-age': '86400',
     ...corsHeaders(corsOrigin)
   });
@@ -108,7 +142,7 @@ function summaryFileName(conversation) {
     .replace(/[^\p{L}\p{N}\s-]/gu, '')
     .trim()
     .replace(/\s+/g, '-')
-    .slice(0, 80) || 'conversation';
+    .slice(0, MAX_SUMMARY_FILE_NAME_LENGTH) || 'conversation';
 }
 
 function contentDispositionAttachment(fileName) {
@@ -150,6 +184,10 @@ export function createAppServer({
     }
 
     if (req.method === 'POST' && pathname === '/import') {
+      if (!verifyImportToken(req)) {
+        writeImportUnauthorized(res, { corsOrigin });
+        return;
+      }
       readRequestBody(req, res, importMaxBytes, (rawBody) => {
         try {
           const fileName = decodeFileNameHeader(req.headers['x-filename']);
@@ -163,7 +201,7 @@ export function createAppServer({
     }
 
     if (pathname === '/api/conversations') {
-      const conversations = listConversations(database, { q: query, limit: 1000, offset: 0 });
+      const conversations = listConversations(database, { q: query, limit: DEFAULT_API_LIST_LIMIT, offset: 0 });
       writeJson(res, 200, { conversations }, { corsOrigin });
       return;
     }
@@ -206,8 +244,8 @@ export function createAppServer({
     if (pathname.startsWith('/export/')) {
       const target = decodeURIComponent(pathname.replace('/export/', ''));
       const conversations = target === 'all'
-        ? listConversations(database, { limit: 10000, offset: 0 })
-        : listConversations(database, { q: query, limit: 10000, offset: 0 }).filter((conversation) => conversation.id === target);
+        ? listConversations(database, { limit: DEFAULT_API_EXPORT_LIMIT, offset: 0 })
+        : listConversations(database, { q: query, limit: DEFAULT_API_EXPORT_LIMIT, offset: 0 }).filter((conversation) => conversation.id === target);
 
       if (conversations.length === 0) {
         res.writeHead(404, { 'content-type': 'text/plain; charset=utf-8' });

@@ -7,6 +7,9 @@ import { ensureDir } from '../core.js';
 
 const CODEX_CLI_VERSION = 'claude-plus-plus';
 const CODEX_MODEL = 'imported-claude-export';
+const MAX_MESSAGE_TEXT_LENGTH = 80000;
+const MAX_TITLE_LENGTH = 2000;
+const MAX_PREVIEW_LENGTH = 500;
 
 function defaultCodexHome() {
   return path.join(os.homedir(), '.codex');
@@ -33,7 +36,7 @@ function toIso(value, fallbackMs) {
   return new Date(toMillis(value, fallbackMs)).toISOString();
 }
 
-function shortText(value, maxLength = 80000) {
+function shortText(value, maxLength = MAX_MESSAGE_TEXT_LENGTH) {
   const text = String(value || '').trim();
   if (text.length <= maxLength) return text;
   return `${text.slice(0, maxLength)}\n\n[Truncated by Claude++]`;
@@ -261,8 +264,8 @@ function buildRestoreEntry(conversation, target) {
     `rollout-${rolloutTimestamp(createdMs)}-${threadId}.jsonl`
   );
   const firstMessage = firstUserMessage(conversation);
-  const firstUserText = shortText(visibleText(firstMessage), 2000);
-  const title = shortText(conversation.title || firstUserText || 'Imported Claude conversation', 500);
+  const firstUserText = shortText(visibleText(firstMessage), MAX_TITLE_LENGTH);
+  const title = shortText(conversation.title || firstUserText || 'Imported Claude conversation', MAX_PREVIEW_LENGTH);
 
   return {
     conversationId: conversation.id,
@@ -345,10 +348,22 @@ function writeFileAtomic(filePath, content) {
     `.${path.basename(filePath)}.tmp-${process.pid}-${crypto.randomUUID()}`
   );
   try {
-    fs.writeFileSync(tempPath, content, 'utf8');
+    const fd = fs.openSync(tempPath, 'w');
+    try {
+      fs.writeSync(fd, content, 'utf8');
+      fs.fsyncSync(fd);
+    } finally {
+      fs.closeSync(fd);
+    }
     fs.renameSync(tempPath, filePath);
   } catch (error) {
-    fs.rmSync(tempPath, { force: true });
+    try {
+      if (fs.existsSync(tempPath)) {
+        fs.rmSync(tempPath, { force: true });
+      }
+    } catch {
+      // ignore cleanup errors so the original error is preserved
+    }
     throw error;
   }
 }

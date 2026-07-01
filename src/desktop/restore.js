@@ -5,6 +5,16 @@ import path from 'node:path';
 import { Level } from 'level';
 import { ensureDir, readJsonSafe } from '../core.js';
 
+const MAX_MESSAGE_TEXT_LENGTH = 80000;
+const MAX_SUMMARY_TEXT_LENGTH = 5000;
+const MAX_TITLE_LENGTH = 2000;
+const AUDIT_OFFSET_MS_ASSISTANT = 300;
+const AUDIT_OFFSET_MS_RESULT = 600;
+const AUDIT_OFFSET_MS_INIT = 100;
+const AUDIT_OFFSET_MS_STATUS = 110;
+const AUDIT_TIMESTAMP_INDEX_MULTIPLIER_MS = 1000;
+const TRUNCATION_MARKER = '\n\n[Truncated by Claude History Rescue]';
+const IMPORTED_BY = 'claude-history-rescue-web';
 const DEFAULT_MODEL = 'claude-history-rescue-import';
 const LOCAL_STORAGE_READ_STATE_KEY = 'cowork-read-state';
 
@@ -37,9 +47,9 @@ function toIso(value, fallback = Date.now()) {
   return new Date(toMillis(value, fallback)).toISOString();
 }
 
-function shortenText(value, maxLength = 5000) {
+function shortenText(value, maxLength = MAX_SUMMARY_TEXT_LENGTH) {
   const text = String(value || '').trim();
-  return text.length > maxLength ? `${text.slice(0, maxLength)}\n\n[Truncated by Claude History Rescue]` : text;
+  return text.length > maxLength ? `${text.slice(0, maxLength)}${TRUNCATION_MARKER}` : text;
 }
 
 function firstUserMessage(conversation) {
@@ -54,7 +64,7 @@ function messageUuid(sessionUuid, message, index, salt = 'message') {
 
 function auditTimestamp(conversation, message, index, offsetMs = 0) {
   const base = toMillis(message?.createdAt || conversation.createdAt || conversation.updatedAt, Date.now());
-  return toIso(base + (index * 1000) + offsetMs);
+  return toIso(base + (index * AUDIT_TIMESTAMP_INDEX_MULTIPLIER_MS) + offsetMs);
 }
 
 function rawTextContentBlocks(message) {
@@ -64,12 +74,12 @@ function rawTextContentBlocks(message) {
       .filter((block) => block?.type === 'text' && typeof block.text === 'string' && block.text.trim())
       .map((block) => ({
         type: 'text',
-        text: shortenText(block.text, 80000)
+        text: shortenText(block.text, MAX_MESSAGE_TEXT_LENGTH)
       }));
   }
 
   if (typeof rawContent === 'string' && rawContent.trim()) {
-    return [{ type: 'text', text: shortenText(rawContent, 80000) }];
+    return [{ type: 'text', text: shortenText(rawContent, MAX_MESSAGE_TEXT_LENGTH) }];
   }
 
   return [];
@@ -89,7 +99,7 @@ function visibleAssistantContentBlocks(message) {
 
   return [{
     type: 'text',
-    text: shortenText(fallbackText, 80000)
+    text: shortenText(fallbackText, MAX_MESSAGE_TEXT_LENGTH)
   }];
 }
 
@@ -101,7 +111,7 @@ function visibleAssistantText(message) {
 }
 
 function userContentForAudit(message) {
-  return shortenText(message.content, 80000);
+  return shortenText(message.content, MAX_MESSAGE_TEXT_LENGTH);
 }
 
 function buildUserAuditLine(conversation, sessionId, message, index, options = {}) {
@@ -158,8 +168,8 @@ function buildAssistantAuditLine(conversation, cliSessionId, message, index) {
 }
 
 function buildResultAuditLine(conversation, cliSessionId, message, index) {
-  const timestamp = auditTimestamp(conversation, message, index, 600);
-  const result = shortenText(visibleAssistantText(message), 80000);
+  const timestamp = auditTimestamp(conversation, message, index, AUDIT_OFFSET_MS_RESULT);
+  const result = shortenText(visibleAssistantText(message), MAX_MESSAGE_TEXT_LENGTH);
 
   return JSON.stringify({
     type: 'result',
@@ -206,7 +216,7 @@ function buildResultAuditLine(conversation, cliSessionId, message, index) {
 }
 
 function buildSystemInitAuditLine(conversation, cliSessionId, sessionDir) {
-  const timestamp = auditTimestamp(conversation, firstUserMessage(conversation), 0, 100);
+  const timestamp = auditTimestamp(conversation, firstUserMessage(conversation), 0, AUDIT_OFFSET_MS_INIT);
   return JSON.stringify({
     type: 'system',
     subtype: 'init',
@@ -234,7 +244,7 @@ function buildSystemInitAuditLine(conversation, cliSessionId, sessionDir) {
 }
 
 function buildSystemStatusAuditLine(conversation, cliSessionId) {
-  const timestamp = auditTimestamp(conversation, firstUserMessage(conversation), 0, 110);
+  const timestamp = auditTimestamp(conversation, firstUserMessage(conversation), 0, AUDIT_OFFSET_MS_STATUS);
   return JSON.stringify({
     type: 'system',
     subtype: 'status',
@@ -420,7 +430,7 @@ function buildSessionMetadata({ conversation, sessionId, cliSessionId, sessionDi
     title: conversation.title || 'Imported conversation',
     vmProcessName: 'claude-history-rescue',
     hostLoopMode: true,
-    initialMessage: shortenText(initialMessage, 2000),
+    initialMessage: shortenText(initialMessage, MAX_TITLE_LENGTH),
     slashCommands: [],
     remoteMcpServersConfig: [],
     egressAllowedDomains: [
@@ -567,8 +577,13 @@ function backupPathFor(backupDir, filePath) {
 function backupExistingPath(filePath, backupDir) {
   if (!fs.existsSync(filePath)) return null;
   ensureDir(backupDir);
+  const resolvedBackupDir = path.resolve(backupDir);
   const targetPath = backupPathFor(backupDir, filePath);
-  fs.cpSync(filePath, targetPath, { recursive: true });
+  const resolvedTarget = path.resolve(targetPath);
+  if (!resolvedTarget.startsWith(resolvedBackupDir + path.sep)) {
+    throw new Error(`Backup target ${resolvedTarget} escapes backup directory ${resolvedBackupDir}`);
+  }
+  fs.cpSync(filePath, targetPath, { recursive: true, dereference: false });
   return targetPath;
 }
 
@@ -583,10 +598,22 @@ function writeFileAtomic(filePath, content) {
     `.${path.basename(filePath)}.tmp-${process.pid}-${crypto.randomUUID()}`
   );
   try {
-    fs.writeFileSync(tempPath, content, 'utf8');
+    const fd = fs.openSync(tempPath, 'w');
+    try {
+      fs.writeSync(fd, content, 'utf8');
+      fs.fsyncSync(fd);
+    } finally {
+      fs.closeSync(fd);
+    }
     fs.renameSync(tempPath, filePath);
   } catch (error) {
-    fs.rmSync(tempPath, { force: true });
+    try {
+      if (fs.existsSync(tempPath)) {
+        fs.rmSync(tempPath, { force: true });
+      }
+    } catch {
+      // ignore cleanup errors so the original error is preserved
+    }
     throw error;
   }
 }

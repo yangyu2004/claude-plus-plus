@@ -65,7 +65,9 @@ export function importArchiveFromBuffer(database, buffer, fileName = 'upload.zip
   const sourceHash = hashBuffer(buffer);
 
   const tempDir = fs.mkdtempSync(path.join(os.tmpdir(), 'claude-history-rescue-'));
-  const tempPath = path.resolve(tempDir, safeArchiveFileName(fileName));
+  const safeName = safeArchiveFileName(fileName);
+  const randomSuffix = crypto.randomUUID().slice(0, 8);
+  const tempPath = path.resolve(tempDir, `${safeName}.${randomSuffix}`);
   const relativeTempPath = path.relative(tempDir, tempPath);
   if (relativeTempPath.startsWith('..') || path.isAbsolute(relativeTempPath)) {
     throw new Error('Invalid archive file name');
@@ -77,7 +79,9 @@ export function importArchiveFromBuffer(database, buffer, fileName = 'upload.zip
     return importArchiveFromFile(database, tempPath);
   } finally {
     try {
-      fs.unlinkSync(tempPath);
+      if (fs.existsSync(tempPath)) {
+        fs.unlinkSync(tempPath);
+      }
     } catch {
       // ignore temp cleanup failures
     }

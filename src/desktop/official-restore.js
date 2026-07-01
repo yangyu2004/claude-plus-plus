@@ -17,6 +17,19 @@ function defaultProjectsDir() {
   return path.join(os.homedir(), '.claude/projects');
 }
 
+/**
+ * Flattens a cwd path into a flat directory name by replacing all
+ * non-alphanumeric characters with hyphens. For example,
+ * `/Users/foo/Work` becomes `-Users-foo-Work`.
+ *
+ * This intentionally collapses the filesystem hierarchy into a single
+ * directory name to avoid issues with nested paths in the projects
+ * directory. Collisions between different paths that flatten to the same
+ * string are acceptable for this use case.
+ *
+ * @param {string} cwd - The current working directory path to flatten.
+ * @returns {string} The flattened directory name.
+ */
 function escapeCwd(cwd) {
   return cwd.replace(/[^a-zA-Z0-9]/g, '-');
 }
@@ -325,10 +338,22 @@ function writeFileAtomic(filePath, content) {
     `.${path.basename(filePath)}.tmp-${process.pid}-${crypto.randomUUID()}`
   );
   try {
-    fs.writeFileSync(tempPath, content, 'utf8');
+    const fd = fs.openSync(tempPath, 'w');
+    try {
+      fs.writeSync(fd, content, 'utf8');
+      fs.fsyncSync(fd);
+    } finally {
+      fs.closeSync(fd);
+    }
     fs.renameSync(tempPath, filePath);
   } catch (error) {
-    fs.rmSync(tempPath, { force: true });
+    try {
+      if (fs.existsSync(tempPath)) {
+        fs.rmSync(tempPath, { force: true });
+      }
+    } catch {
+      // ignore cleanup errors so the original error is preserved
+    }
     throw error;
   }
 }

@@ -32,6 +32,7 @@ Usage:
   ${PRIMARY_BIN} search <query> [--db <path>]
   ${PRIMARY_BIN} export [--id <conversationId>] [--out <dir>] [--db <path>]
   ${PRIMARY_BIN} serve [--db <path>] [--port <port>]
+    (Set CLAUDE_PLUS_PLUS_IMPORT_TOKEN to require x-import-token header for /import)
   ${PRIMARY_BIN} rehydrate --id <conversationId> [--db <path>] [--out <file>]
   ${PRIMARY_BIN} desktop-restore <export.zip> [--write] [--limit <n>] [--data-dir <dir>] [--session-root <dir>] [--update-read-state]
   ${PRIMARY_BIN} desktop-restore-3p <export.zip> [--write] [--limit <n>] [--data-dir <dir>] [--session-root <dir>] [--update-read-state]

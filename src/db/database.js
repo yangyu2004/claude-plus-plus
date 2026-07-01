@@ -3,6 +3,17 @@ import path from 'node:path';
 import { DatabaseSync } from 'node:sqlite';
 import { ensureDir } from '../core.js';
 
+const DEFAULT_LIST_LIMIT = 100;
+const MAX_MESSAGE_TEXT_LENGTH = 80000;
+const MAX_TITLE_LENGTH = 2000;
+const AUDIT_OFFSET_MS_ASSISTANT = 300;
+const AUDIT_OFFSET_MS_RESULT = 600;
+const AUDIT_OFFSET_MS_INIT = 100;
+const AUDIT_OFFSET_MS_STATUS = 110;
+const TRUNCATION_MARKER = '\n\n[Truncated by Claude History Rescue]';
+const IMPORTED_BY = 'claude-history-rescue-web';
+const DEFAULT_MODEL = 'claude-history-rescue-import';
+
 const SCHEMA = `
 PRAGMA journal_mode = WAL;
 PRAGMA foreign_keys = ON;
@@ -164,8 +175,9 @@ export function getConversation(database, conversationId) {
   };
 }
 
-export function listConversations(database, { q = '', limit = 100, offset = 0 } = {}) {
+export function listConversations(database, { q = '', limit = DEFAULT_LIST_LIMIT, offset = 0 } = {}) {
   const query = String(q || '').trim();
+  const escapedQuery = query.replace(/[%_]/g, '\\$&');
   const baseSql = `
     SELECT
       c.*,
@@ -178,15 +190,15 @@ export function listConversations(database, { q = '', limit = 100, offset = 0 } 
     FROM conversations c
     LEFT JOIN messages m ON m.conversation_id = c.id
     ${query ? `
-      WHERE c.title LIKE ? COLLATE NOCASE
-         OR c.summary LIKE ? COLLATE NOCASE
-         OR c.raw_json LIKE ? COLLATE NOCASE
-         OR c.project_name LIKE ? COLLATE NOCASE
+      WHERE c.title LIKE ? ESCAPE '\\' COLLATE NOCASE
+         OR c.summary LIKE ? ESCAPE '\\' COLLATE NOCASE
+         OR c.raw_json LIKE ? ESCAPE '\\' COLLATE NOCASE
+         OR c.project_name LIKE ? ESCAPE '\\' COLLATE NOCASE
          OR EXISTS (
            SELECT 1
            FROM messages mx
            WHERE mx.conversation_id = c.id
-             AND mx.content LIKE ? COLLATE NOCASE
+             AND mx.content LIKE ? ESCAPE '\\' COLLATE NOCASE
          )
     ` : ''}
     GROUP BY c.id
@@ -194,7 +206,7 @@ export function listConversations(database, { q = '', limit = 100, offset = 0 } 
     LIMIT ? OFFSET ?
   `;
   const statement = database.prepare(baseSql);
-  const params = query ? [`%${query}%`, `%${query}%`, `%${query}%`, `%${query}%`, `%${query}%`, limit, offset] : [limit, offset];
+  const params = query ? [`%${escapedQuery}%`, `%${escapedQuery}%`, `%${escapedQuery}%`, `%${escapedQuery}%`, `%${escapedQuery}%`, limit, offset] : [limit, offset];
   const rows = statement.all(...params);
 
   return rows.map((row) => ({
