@@ -1,0 +1,25 @@
+{
+  "uuid": "project_alpha",
+  "name": "Portable Metadata Project",
+  "description": "Synthetic project fixture for import tests.",
+  "created_at": "2026-01-03T00:00:00Z",
+  "updated_at": "2026-01-04T00:00:00Z",
+  "is_private": true,
+  "is_starter_project": false,
+  "creator": {
+    "uuid": "user_fixture_1",
+    "full_name": "Fixture User"
+  },
+  "docs": [
+    {
+      "uuid": "doc_fixture_1",
+      "file_name": "requirements.md",
+      "content": "Use synthetic metadata in tests."
+    },
+    {
+      "uuid": "doc_fixture_2",
+      "file_name": "import-notes.md",
+      "content": "The importer should persist checked-in project metadata."
+    }
+  ]
+}

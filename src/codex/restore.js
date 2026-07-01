@@ -329,13 +329,28 @@ function writeRollout(entry, overwrite) {
   }
 
   ensureDir(entry.rolloutDir);
-  fs.writeFileSync(entry.rolloutPath, entry.rolloutJsonl, 'utf8');
+  writeFileAtomic(entry.rolloutPath, entry.rolloutJsonl);
   return {
     threadId: entry.threadId,
     title: entry.title,
     skipped: false,
     rolloutPath: entry.rolloutPath
   };
+}
+
+function writeFileAtomic(filePath, content) {
+  ensureDir(path.dirname(filePath));
+  const tempPath = path.join(
+    path.dirname(filePath),
+    `.${path.basename(filePath)}.tmp-${process.pid}-${crypto.randomUUID()}`
+  );
+  try {
+    fs.writeFileSync(tempPath, content, 'utf8');
+    fs.renameSync(tempPath, filePath);
+  } catch (error) {
+    fs.rmSync(tempPath, { force: true });
+    throw error;
+  }
 }
 
 function ensureThreadsTable(database, stateDbPath) {
@@ -451,7 +466,14 @@ function upsertSessionIndex(target, entries, overwrite) {
     }));
 
   ensureDir(path.dirname(target.sessionIndexPath));
-  fs.writeFileSync(target.sessionIndexPath, [...keptLines, ...newLines].join('\n') + '\n', 'utf8');
+  writeFileAtomic(target.sessionIndexPath, [...keptLines, ...newLines].join('\n') + '\n');
+}
+
+function cleanupNewRollouts(written) {
+  for (const item of written) {
+    if (item.skipped || !item.created || !item.rolloutPath) continue;
+    fs.rmSync(item.rolloutPath, { force: true });
+  }
 }
 
 export async function applyCodexRestorePlan(plan, options = {}) {
@@ -460,7 +482,7 @@ export async function applyCodexRestorePlan(plan, options = {}) {
     ? path.resolve(options.backupDir)
     : path.join(plan.target.codexHome, '.claude-plus-plus-backups', `codex-restore-${new Date().toISOString().replace(/[:.]/g, '-')}`);
   const backups = backupCodexState(plan.target, backupDir);
-  const written = plan.entries.map((entry) => writeRollout(entry, overwrite));
+  const written = [];
   const database = new DatabaseSync(plan.target.stateDbPath);
   let transactionStarted = false;
 
@@ -469,9 +491,28 @@ export async function applyCodexRestorePlan(plan, options = {}) {
     database.exec('BEGIN IMMEDIATE');
     transactionStarted = true;
     const indexed = plan.entries.map((entry) => upsertThread(database, plan.target, entry, overwrite));
+    for (const [index, entry] of plan.entries.entries()) {
+      if (indexed[index]?.skipped && !overwrite) {
+        written.push({
+          threadId: entry.threadId,
+          title: entry.title,
+          skipped: true,
+          reason: indexed[index].reason || 'exists'
+        });
+        continue;
+      }
+      const created = !fs.existsSync(entry.rolloutPath);
+      const rolloutBackup = overwrite ? backupFileIfExists(entry.rolloutPath, backupDir) : null;
+      if (rolloutBackup) backups.push(rolloutBackup);
+      const result = writeRollout(entry, overwrite);
+      written.push({
+        ...result,
+        created
+      });
+    }
+    upsertSessionIndex(plan.target, plan.entries, overwrite);
     database.exec('COMMIT');
     transactionStarted = false;
-    upsertSessionIndex(plan.target, plan.entries, overwrite);
 
     return {
       target: plan.target,
@@ -482,6 +523,7 @@ export async function applyCodexRestorePlan(plan, options = {}) {
     };
   } catch (error) {
     if (transactionStarted) database.exec('ROLLBACK');
+    cleanupNewRollouts(written);
     throw error;
   } finally {
     database.close();

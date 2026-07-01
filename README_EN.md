@@ -31,23 +31,23 @@ Claude++ was built to close that gap. It turns official exports into a local arc
 ## Install
 
 ```bash
-cd claude-history-rescue-web
+cd claude-plus-plus
 npm install
 ```
 
 ## Usage
 
 ```bash
-claude-history-rescue-web import ~/Downloads/claude-export.zip
-claude-history-rescue-web serve --port 8787
-claude-history-rescue-web list
-claude-history-rescue-web search "recovery"
-claude-history-rescue-web export --out ./archive
-claude-history-rescue-web rehydrate --id conv_1 --out prompt.md
-claude-history-rescue-web desktop-restore ~/Downloads/claude-export.zip
-claude-history-rescue-web desktop-restore ~/Downloads/claude-export.zip --write
-claude-history-rescue-web desktop-restore-official ~/Downloads/claude-export.zip --write --cwd ~/Desktop/Claude
-claude-history-rescue-web codex-restore ~/Downloads/claude-export.zip --write --cwd ~/Documents/Work
+claude-plus-plus import ~/Downloads/claude-export.zip
+claude-plus-plus serve --port 8787
+claude-plus-plus list
+claude-plus-plus search "recovery"
+claude-plus-plus export --out ./archive
+claude-plus-plus rehydrate --id conv_1 --out prompt.md
+claude-plus-plus desktop-restore ~/Downloads/claude-export.zip
+claude-plus-plus desktop-restore ~/Downloads/claude-export.zip --write
+claude-plus-plus desktop-restore-official ~/Downloads/claude-export.zip --write --cwd ~/Desktop/Claude
+claude-plus-plus codex-restore ~/Downloads/claude-export.zip --write --cwd ~/Documents/Work
 ```
 
 The default database path is `./.claude-history-rescue/history.sqlite`.
@@ -72,15 +72,15 @@ Claude++ has three desktop restore variants:
 By default it is a dry run. Add `--write` to create `local_<uuid>.json`, the matching session directory, `.claude/.claude.json`, `outputs/`, `uploads/`, a Claude Desktop-style `audit.jsonl`, and the `.claude/projects/imported/*.jsonl` transcript used by the conversation view. Add `--overwrite` to rebuild sessions that were already restored.
 
 ```bash
-claude-history-rescue-web desktop-restore ~/Downloads/claude-export.zip --limit 3
-claude-history-rescue-web desktop-restore ~/Downloads/claude-export.zip --write
-claude-history-rescue-web desktop-restore ~/Downloads/claude-export.zip --write --overwrite
+claude-plus-plus desktop-restore ~/Downloads/claude-export.zip --limit 3
+claude-plus-plus desktop-restore ~/Downloads/claude-export.zip --write
+claude-plus-plus desktop-restore ~/Downloads/claude-export.zip --write --overwrite
 ```
 
 If new items do not appear in Claude Desktop's sidebar after restart, quit Claude Desktop and run:
 
 ```bash
-claude-history-rescue-web desktop-restore ~/Downloads/claude-export.zip --write --update-read-state
+claude-plus-plus desktop-restore ~/Downloads/claude-export.zip --write --update-read-state
 ```
 
 The read-state index lives in Electron Local Storage and is locked while Claude Desktop is running. The tool backs up overwritten session files and read-state values under `.claude-history-rescue/backups/`.
@@ -97,9 +97,9 @@ The read-state index lives in Electron Local Storage and is locked while Claude 
 It writes `local_<uuid>.json` session metadata plus the matching `.jsonl` transcript. This version cleans export-only noise such as `thinking`, `tool_use`, and `tool_result`, keeping only readable user and assistant text.
 
 ```bash
-claude-history-rescue-web desktop-restore-official ~/Downloads/claude-export.zip --limit 3
-claude-history-rescue-web desktop-restore-official ~/Downloads/claude-export.zip --write --cwd ~/Desktop/Claude
-claude-history-rescue-web desktop-restore-official ~/Downloads/claude-export.zip --write --overwrite --cwd ~/Desktop/Claude
+claude-plus-plus desktop-restore-official ~/Downloads/claude-export.zip --limit 3
+claude-plus-plus desktop-restore-official ~/Downloads/claude-export.zip --write --cwd ~/Desktop/Claude
+claude-plus-plus desktop-restore-official ~/Downloads/claude-export.zip --write --overwrite --cwd ~/Desktop/Claude
 ```
 
 `--cwd` controls the escaped project directory under `~/.claude/projects`. Use the same working directory you normally use in Claude Desktop. After writing, fully quit Claude Desktop and reopen it so the sidebar rescans local sessions.
@@ -117,9 +117,9 @@ claude-history-rescue-web desktop-restore-official ~/Downloads/claude-export.zip
 It creates a Codex rollout `.jsonl` for each Claude conversation, then inserts the matching row into the `threads` table so the conversation appears in the Codex Desktop sidebar. Opening the restored thread shows readable user and assistant text; export-only noise such as `thinking`, `tool_use`, and `tool_result` is filtered out.
 
 ```bash
-claude-history-rescue-web codex-restore ~/Downloads/claude-export.zip --limit 3
-claude-history-rescue-web codex-restore ~/Downloads/claude-export.zip --write --cwd ~/Documents/Work
-claude-history-rescue-web codex-restore ~/Downloads/claude-export.zip --write --overwrite --cwd ~/Documents/Work
+claude-plus-plus codex-restore ~/Downloads/claude-export.zip --limit 3
+claude-plus-plus codex-restore ~/Downloads/claude-export.zip --write --cwd ~/Documents/Work
+claude-plus-plus codex-restore ~/Downloads/claude-export.zip --write --overwrite --cwd ~/Documents/Work
 ```
 
 By default this is a dry run. Before writing, fully quit Codex Desktop because `state_5.sqlite` may be locked by the app. The tool backs up `state_5.sqlite`, WAL/SHM files, and `session_index.jsonl` under `~/.codex/.claude-plus-plus-backups/` before writing. `--cwd` controls the working directory stored on the imported Codex threads.

@@ -1,17 +1,11 @@
 #!/usr/bin/env node
-import fs from 'node:fs';
 import path from 'node:path';
-import { fileURLToPath } from 'node:url';
-import { createHash } from 'node:crypto';
-import { ensureDir, resolveDatabasePath, resolveDataDir, writeTextFile, humanFileName } from '../src/core.js';
+import { ensureDir, resolveDatabasePath, writeTextFile, humanFileName } from '../src/core.js';
 import { readClaudeExportZip } from '../src/import/read-export-zip.js';
 import { extractConversationsFromDocuments } from '../src/import/normalize.js';
+import { importArchiveFromFile } from '../src/import/import-archive.js';
 import {
   openDatabase,
-  createImportRun,
-  listImportedSourceHashes,
-  saveConversation,
-  replaceConversationMessages,
   listConversations,
   getConversation,
   countConversations
@@ -23,20 +17,26 @@ import { applyDesktopRestorePlan, buildDesktopRestorePlan } from '../src/desktop
 import { applyOfficialDesktopRestorePlan, buildOfficialDesktopRestorePlan } from '../src/desktop/official-restore.js';
 import { applyCodexRestorePlan, buildCodexRestorePlan } from '../src/codex/restore.js';
 
+const PRIMARY_BIN = 'claude-plus-plus';
+const LEGACY_BIN = 'claude-history-rescue-web';
+
 function printUsage() {
-  process.stdout.write(`claude-history-rescue-web
+  process.stdout.write(`${PRIMARY_BIN}
+
+Alias:
+  ${LEGACY_BIN}
 
 Usage:
-  claude-history-rescue-web import <export.zip> [--db <path>]
-  claude-history-rescue-web list [--db <path>] [--q <query>]
-  claude-history-rescue-web search <query> [--db <path>]
-  claude-history-rescue-web export [--id <conversationId>] [--out <dir>] [--db <path>]
-  claude-history-rescue-web serve [--db <path>] [--port <port>]
-  claude-history-rescue-web rehydrate --id <conversationId> [--db <path>] [--out <file>]
-  claude-history-rescue-web desktop-restore <export.zip> [--write] [--limit <n>] [--data-dir <dir>] [--session-root <dir>] [--update-read-state]
-  claude-history-rescue-web desktop-restore-3p <export.zip> [--write] [--limit <n>] [--data-dir <dir>] [--session-root <dir>] [--update-read-state]
-  claude-history-rescue-web desktop-restore-official <export.zip> [--write] [--limit <n>] [--cwd <dir>] [--data-dir <dir>] [--projects-dir <dir>] [--session-root <dir>] [--overwrite]
-  claude-history-rescue-web codex-restore <export.zip> [--write] [--limit <n>] [--codex-home <dir>] [--cwd <dir>] [--overwrite]
+  ${PRIMARY_BIN} import <export.zip> [--db <path>]
+  ${PRIMARY_BIN} list [--db <path>] [--q <query>]
+  ${PRIMARY_BIN} search <query> [--db <path>]
+  ${PRIMARY_BIN} export [--id <conversationId>] [--out <dir>] [--db <path>]
+  ${PRIMARY_BIN} serve [--db <path>] [--port <port>]
+  ${PRIMARY_BIN} rehydrate --id <conversationId> [--db <path>] [--out <file>]
+  ${PRIMARY_BIN} desktop-restore <export.zip> [--write] [--limit <n>] [--data-dir <dir>] [--session-root <dir>] [--update-read-state]
+  ${PRIMARY_BIN} desktop-restore-3p <export.zip> [--write] [--limit <n>] [--data-dir <dir>] [--session-root <dir>] [--update-read-state]
+  ${PRIMARY_BIN} desktop-restore-official <export.zip> [--write] [--limit <n>] [--cwd <dir>] [--data-dir <dir>] [--projects-dir <dir>] [--session-root <dir>] [--overwrite]
+  ${PRIMARY_BIN} codex-restore <export.zip> [--write] [--limit <n>] [--codex-home <dir>] [--cwd <dir>] [--overwrite]
 `);
 }
 
@@ -61,12 +61,6 @@ function parseArgs(argv) {
   return { positionals, options };
 }
 
-function hashFile(filePath) {
-  const hash = createHash('sha256');
-  hash.update(fs.readFileSync(filePath));
-  return hash.digest('hex');
-}
-
 function printConversationTable(conversations) {
   const rows = conversations.map((conversation) => ({
     id: conversation.id,
@@ -77,41 +71,15 @@ function printConversationTable(conversations) {
   process.stdout.write(`${JSON.stringify(rows, null, 2)}\n`);
 }
 
-async function importArchive(zipPath, dbPath) {
-  const database = openDatabase(dbPath);
-  const sourceHash = hashFile(zipPath);
-  if (listImportedSourceHashes(database).includes(sourceHash)) {
-    return { imported: 0, skipped: true, sourceHash };
-  }
-
-  const documents = readClaudeExportZip(zipPath);
-  const conversations = extractConversationsFromDocuments(documents);
-  const importedAt = new Date().toISOString();
-
-  createImportRun(database, zipPath, sourceHash, importedAt);
-  database.exec('BEGIN IMMEDIATE');
-  try {
-    for (const conversation of conversations) {
-      saveConversation(database, conversation, sourceHash);
-      replaceConversationMessages(database, conversation);
-    }
-    database.exec('COMMIT');
-  } catch (error) {
-    database.exec('ROLLBACK');
-    throw error;
-  }
-
-  return { imported: conversations.length, skipped: false, sourceHash };
-}
-
 async function main() {
   const argv = process.argv.slice(2);
+  const wantsHelp = argv.includes('--help') || argv.includes('-h');
   const command = argv[0];
   const { positionals, options } = parseArgs(argv.slice(1));
   const baseDir = process.cwd();
   const dbPath = resolveDatabasePath(baseDir, options.db);
 
-  if (!command || command === 'help' || options.help) {
+  if (!command || command === 'help' || wantsHelp || options.help) {
     printUsage();
     return;
   }
@@ -119,11 +87,12 @@ async function main() {
   if (command === 'import') {
     const zipPath = positionals[0];
     if (!zipPath) throw new Error('Missing export zip path');
-    const result = await importArchive(path.resolve(baseDir, zipPath), dbPath);
+    const database = openDatabase(dbPath);
+    const result = importArchiveFromFile(database, path.resolve(baseDir, zipPath));
     process.stdout.write(JSON.stringify({
       ...result,
       dbPath,
-      count: countConversations(openDatabase(dbPath))
+      count: countConversations(database)
     }, null, 2) + '\n');
     return;
   }
@@ -346,7 +315,9 @@ async function main() {
     const port = Number(options.port || 8787);
     const app = createAppServer({ database, port });
     const address = await app.listen();
-    const url = `http://127.0.0.1:${address.port}`;
+    const boundHost = typeof address === 'object' && address.address ? address.address : '127.0.0.1';
+    const displayHost = boundHost === '::' ? '[::]' : boundHost;
+    const url = `http://${displayHost}:${address.port}`;
     process.stdout.write(`Serving on ${url}\n`);
     process.on('SIGINT', async () => {
       await app.close();

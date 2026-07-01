@@ -99,3 +99,31 @@ test('skips existing desktop sessions unless overwrite is enabled', async () => 
   const second = await applyDesktopRestorePlan(secondPlan);
   assert.equal(second.written[0].skipped, true);
 });
+
+test('backs up overwritten desktop restore files', async () => {
+  const { tempDir, zipPath } = makeFixtureZip();
+  const sessionRoot = path.join(tempDir, 'local-agent-mode-sessions', 'account-uuid', 'org-uuid');
+  fs.mkdirSync(sessionRoot, { recursive: true });
+  const conversations = extractConversationsFromDocuments(readClaudeExportZip(zipPath));
+  const plan = buildDesktopRestorePlan(conversations, { sessionRoot, limit: 1 });
+
+  await applyDesktopRestorePlan(plan);
+  fs.writeFileSync(plan.entries[0].metadataPath, '{"old":"metadata"}\n', 'utf8');
+  fs.writeFileSync(plan.entries[0].claudeConfigPath, '{"old":"config"}\n', 'utf8');
+  fs.writeFileSync(plan.entries[0].auditPath, 'old audit\n', 'utf8');
+  fs.writeFileSync(plan.entries[0].transcriptPath, 'old transcript\n', 'utf8');
+  fs.writeFileSync(plan.entries[0].transcriptAliasPath, 'old alias\n', 'utf8');
+
+  const forcedPlan = buildDesktopRestorePlan(conversations, { sessionRoot, limit: 1 });
+  const backupDir = path.join(tempDir, 'backups');
+  const forced = await applyDesktopRestorePlan(forcedPlan, { overwrite: true, backupDir });
+  const backups = forced.written[0].backups.map((backupPath) => fs.readFileSync(backupPath, 'utf8'));
+
+  assert.equal(forced.written[0].skipped, false);
+  assert.equal(backups.includes('{"old":"metadata"}\n'), true);
+  assert.equal(backups.includes('{"old":"config"}\n'), true);
+  assert.equal(backups.includes('old audit\n'), true);
+  assert.equal(backups.includes('old transcript\n'), true);
+  assert.equal(backups.includes('old alias\n'), true);
+  assert.deepEqual(fs.readdirSync(path.dirname(plan.entries[0].transcriptPath)).filter((name) => name.includes('.tmp-')), []);
+});

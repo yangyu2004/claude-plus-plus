@@ -131,3 +131,50 @@ test('skips existing Codex restore entries unless overwrite is enabled', async (
   assert.equal(forced.written[0].skipped, false);
   assert.equal(forced.indexed[0].skipped, false);
 });
+
+test('backs up overwritten Codex rollout and session index files', async () => {
+  const { tempDir, zipPath } = makeFixtureZip();
+  const codexHome = path.join(tempDir, '.codex');
+  createCodexStateDb(codexHome);
+  const conversations = extractConversationsFromDocuments(readClaudeExportZip(zipPath));
+  const plan = buildCodexRestorePlan(conversations, { codexHome, cwd: tempDir, limit: 1 });
+
+  await applyCodexRestorePlan(plan);
+  fs.writeFileSync(plan.entries[0].rolloutPath, 'existing rollout\n', 'utf8');
+  fs.writeFileSync(path.join(codexHome, 'session_index.jsonl'), '{"id":"keep"}\n', 'utf8');
+
+  const forcedPlan = buildCodexRestorePlan(conversations, { codexHome, cwd: tempDir, limit: 1 });
+  const backupDir = path.join(tempDir, 'backups');
+  const result = await applyCodexRestorePlan(forcedPlan, { overwrite: true, backupDir });
+
+  assert.equal(result.written[0].skipped, false);
+  assert.equal(fs.readFileSync(path.join(backupDir, path.basename(plan.entries[0].rolloutPath)), 'utf8'), 'existing rollout\n');
+  assert.equal(fs.readFileSync(path.join(backupDir, 'session_index.jsonl'), 'utf8'), '{"id":"keep"}\n');
+  assert.deepEqual(fs.readdirSync(path.dirname(plan.entries[0].rolloutPath)).filter((name) => name.includes('.tmp-')), []);
+});
+
+test('removes newly written Codex rollout when database indexing fails', async () => {
+  const { tempDir, zipPath } = makeFixtureZip();
+  const codexHome = path.join(tempDir, '.codex');
+  createCodexStateDb(codexHome);
+  const conversations = extractConversationsFromDocuments(readClaudeExportZip(zipPath));
+  const blockedParent = path.join(tempDir, 'blocked-parent');
+  fs.writeFileSync(blockedParent, 'not a directory', 'utf8');
+  const plan = buildCodexRestorePlan(conversations, {
+    codexHome,
+    cwd: tempDir,
+    limit: 1,
+    sessionIndexPath: path.join(blockedParent, 'session_index.jsonl')
+  });
+
+  await assert.rejects(
+    () => applyCodexRestorePlan(plan),
+    /EEXIST|ENOTDIR|not a directory/
+  );
+
+  assert.equal(fs.existsSync(plan.entries[0].rolloutPath), false);
+  const database = new DatabaseSync(path.join(codexHome, 'state_5.sqlite'));
+  const row = database.prepare('SELECT id FROM threads WHERE id = ?').get(plan.entries[0].threadId);
+  database.close();
+  assert.equal(row, undefined);
+});

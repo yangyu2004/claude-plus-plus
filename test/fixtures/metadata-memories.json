@@ -1,0 +1,7 @@
+[
+  {
+    "uuid": "memory_fixture_1",
+    "content": "Remember that synthetic fixtures keep tests portable.",
+    "created_at": "2026-01-02T00:00:00Z"
+  }
+]

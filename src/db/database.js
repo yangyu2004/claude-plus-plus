@@ -92,7 +92,8 @@ export function createImportRun(database, sourcePath, sourceHash, importedAt) {
   const statement = database.prepare(
     'INSERT OR IGNORE INTO import_runs (source_path, source_hash, imported_at) VALUES (?, ?, ?)'
   );
-  statement.run(sourcePath, sourceHash, importedAt);
+  const result = statement.run(sourcePath, sourceHash, importedAt);
+  return result.changes === 1;
 }
 
 export function saveConversation(database, conversation, sourceHash) {

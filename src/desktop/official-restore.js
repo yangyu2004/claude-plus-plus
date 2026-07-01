@@ -315,11 +315,34 @@ export function buildOfficialDesktopRestorePlan(conversations, options = {}) {
 }
 
 function writeJsonFile(filePath, value) {
-  ensureDir(path.dirname(filePath));
-  fs.writeFileSync(filePath, `${JSON.stringify(value, null, 2)}\n`, 'utf8');
+  writeFileAtomic(filePath, `${JSON.stringify(value, null, 2)}\n`);
 }
 
-function writeRestoreEntry(entry, overwrite = false) {
+function writeFileAtomic(filePath, content) {
+  ensureDir(path.dirname(filePath));
+  const tempPath = path.join(
+    path.dirname(filePath),
+    `.${path.basename(filePath)}.tmp-${process.pid}-${crypto.randomUUID()}`
+  );
+  try {
+    fs.writeFileSync(tempPath, content, 'utf8');
+    fs.renameSync(tempPath, filePath);
+  } catch (error) {
+    fs.rmSync(tempPath, { force: true });
+    throw error;
+  }
+}
+
+function backupFileIfExists(filePath, backupDir) {
+  if (!backupDir || !fs.existsSync(filePath)) return null;
+  ensureDir(backupDir);
+  const backupPath = path.join(backupDir, path.basename(filePath));
+  fs.copyFileSync(filePath, backupPath);
+  return backupPath;
+}
+
+function writeRestoreEntry(entry, options = {}) {
+  const overwrite = Boolean(options.overwrite);
   if (entry.exists && !overwrite) {
     return {
       sessionId: entry.sessionId,
@@ -329,9 +352,14 @@ function writeRestoreEntry(entry, overwrite = false) {
     };
   }
 
+  const backups = [
+    backupFileIfExists(entry.metadataPath, options.backupDir),
+    backupFileIfExists(entry.transcriptPath, options.backupDir)
+  ].filter(Boolean);
+
   ensureDir(entry.transcriptDir);
   writeJsonFile(entry.metadataPath, entry.metadata);
-  fs.writeFileSync(entry.transcriptPath, entry.transcriptJsonl, 'utf8');
+  writeFileAtomic(entry.transcriptPath, entry.transcriptJsonl);
 
   return {
     sessionId: entry.sessionId,
@@ -339,16 +367,19 @@ function writeRestoreEntry(entry, overwrite = false) {
     title: entry.title,
     skipped: false,
     metadataPath: entry.metadataPath,
-    transcriptPath: entry.transcriptPath
+    transcriptPath: entry.transcriptPath,
+    backups
   };
 }
 
 export async function applyOfficialDesktopRestorePlan(plan, options = {}) {
   const overwrite = Boolean(options.overwrite);
-  const written = plan.entries.map((entry) => writeRestoreEntry(entry, overwrite));
+  const backupDir = options.backupDir ? path.resolve(options.backupDir) : null;
+  const written = plan.entries.map((entry) => writeRestoreEntry(entry, { overwrite, backupDir }));
 
   return {
     target: plan.target,
+    backupDir,
     written,
     readState: { updated: false, reason: 'not-required' }
   };

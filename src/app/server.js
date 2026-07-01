@@ -4,24 +4,103 @@ import { countConversations, countProjects, getConversation, getImportMetadata, 
 import { conversationToMarkdown } from '../render/markdown.js';
 import { importArchiveFromBuffer } from '../import/import-archive.js';
 
-function writeJson(res, statusCode, payload) {
+const DEFAULT_HOST = '127.0.0.1';
+const DEFAULT_IMPORT_MAX_BYTES = 512 * 1024 * 1024;
+
+function corsHeaders(corsOrigin) {
+  if (!corsOrigin) return {};
+
+  return {
+    'access-control-allow-origin': corsOrigin,
+    vary: 'Origin'
+  };
+}
+
+function writeJson(res, statusCode, payload, { corsOrigin = null } = {}) {
   res.writeHead(statusCode, {
     'content-type': 'application/json; charset=utf-8',
-    'access-control-allow-origin': '*',
     'access-control-allow-methods': 'GET, POST, OPTIONS',
-    'access-control-allow-headers': 'content-type, x-filename'
+    'access-control-allow-headers': 'content-type, x-filename',
+    ...corsHeaders(corsOrigin)
   });
   res.end(JSON.stringify(payload));
 }
 
-function writeCorsPreflight(res) {
+function writeCorsPreflight(res, { corsOrigin = null } = {}) {
   res.writeHead(204, {
-    'access-control-allow-origin': '*',
     'access-control-allow-methods': 'GET, POST, OPTIONS',
     'access-control-allow-headers': 'content-type, x-filename',
-    'access-control-max-age': '86400'
+    'access-control-max-age': '86400',
+    ...corsHeaders(corsOrigin)
   });
   res.end();
+}
+
+function formatByteLimit(limit) {
+  if (limit < 1024 * 1024) {
+    return `${limit} bytes`;
+  }
+
+  return `${Math.round(limit / 1024 / 1024)} MiB`;
+}
+
+function importLimitError(limit) {
+  return {
+    error: `Import upload exceeds the ${formatByteLimit(limit)} limit`
+  };
+}
+
+function writeImportLimitExceeded(req, res, limit, { corsOrigin = null } = {}) {
+  req.resume();
+  writeJson(res, 413, importLimitError(limit), { corsOrigin });
+}
+
+function decodeFileNameHeader(headerValue) {
+  const value = Array.isArray(headerValue) ? headerValue[0] : headerValue;
+  try {
+    return decodeURIComponent(String(value || 'upload.zip'));
+  } catch {
+    const error = new Error('Invalid x-filename header');
+    error.statusCode = 400;
+    throw error;
+  }
+}
+
+function readRequestBody(req, res, limit, onBody, { corsOrigin = null } = {}) {
+  const contentLength = Number(req.headers['content-length']);
+  if (Number.isFinite(contentLength) && contentLength > limit) {
+    writeImportLimitExceeded(req, res, limit, { corsOrigin });
+    return;
+  }
+
+  const chunks = [];
+  let totalBytes = 0;
+  let rejected = false;
+
+  req.on('data', (chunk) => {
+    if (rejected) return;
+
+    totalBytes += chunk.length;
+    if (totalBytes > limit) {
+      rejected = true;
+      chunks.length = 0;
+      writeImportLimitExceeded(req, res, limit, { corsOrigin });
+      return;
+    }
+
+    chunks.push(chunk);
+  });
+
+  req.on('end', () => {
+    if (rejected) return;
+    onBody(Buffer.concat(chunks, totalBytes));
+  });
+
+  req.on('error', (error) => {
+    if (!res.writableEnded) {
+      writeJson(res, 400, { error: error.message }, { corsOrigin });
+    }
+  });
 }
 
 function summaryFileName(conversation) {
@@ -53,48 +132,50 @@ function buildSummary(database) {
   };
 }
 
-export function createAppServer({ database, port = 8787 } = {}) {
+export function createAppServer({
+  database,
+  port = 8787,
+  host = DEFAULT_HOST,
+  importMaxBytes = DEFAULT_IMPORT_MAX_BYTES,
+  corsOrigin = null
+} = {}) {
   const server = http.createServer((req, res) => {
     const requestUrl = new URL(req.url || '/', `http://${req.headers.host || 'localhost'}`);
     const pathname = requestUrl.pathname;
     const query = requestUrl.searchParams.get('q') || '';
 
     if (req.method === 'OPTIONS' && (pathname.startsWith('/api/') || pathname === '/import')) {
-      writeCorsPreflight(res);
+      writeCorsPreflight(res, { corsOrigin });
       return;
     }
 
     if (req.method === 'POST' && pathname === '/import') {
-      let rawBody = Buffer.alloc(0);
-      req.on('data', (chunk) => {
-        rawBody = Buffer.concat([rawBody, chunk]);
-      });
-      req.on('end', () => {
+      readRequestBody(req, res, importMaxBytes, (rawBody) => {
         try {
-          const fileName = decodeURIComponent(String(req.headers['x-filename'] || 'upload.zip'));
+          const fileName = decodeFileNameHeader(req.headers['x-filename']);
           const result = importArchiveFromBuffer(database, rawBody, fileName);
-          writeJson(res, 200, result);
+          writeJson(res, 200, result, { corsOrigin });
         } catch (error) {
-          writeJson(res, 500, { error: error.message });
+          writeJson(res, error.statusCode || 500, { error: error.message }, { corsOrigin });
         }
-      });
+      }, { corsOrigin });
       return;
     }
 
     if (pathname === '/api/conversations') {
       const conversations = listConversations(database, { q: query, limit: 1000, offset: 0 });
-      writeJson(res, 200, { conversations });
+      writeJson(res, 200, { conversations }, { corsOrigin });
       return;
     }
 
     if (pathname === '/api/projects') {
       const projects = listProjects(database);
-      writeJson(res, 200, { projects });
+      writeJson(res, 200, { projects }, { corsOrigin });
       return;
     }
 
     if (pathname === '/api/overview') {
-      writeJson(res, 200, buildSummary(database));
+      writeJson(res, 200, buildSummary(database), { corsOrigin });
       return;
     }
 
@@ -102,11 +183,11 @@ export function createAppServer({ database, port = 8787 } = {}) {
       const conversationId = decodeURIComponent(pathname.replace('/api/conversations/', ''));
       const conversation = getConversation(database, conversationId);
       if (!conversation) {
-        writeJson(res, 404, { error: 'Conversation not found' });
+        writeJson(res, 404, { error: 'Conversation not found' }, { corsOrigin });
         return;
       }
 
-      writeJson(res, 200, { conversation });
+      writeJson(res, 200, { conversation }, { corsOrigin });
       return;
     }
 
@@ -114,11 +195,11 @@ export function createAppServer({ database, port = 8787 } = {}) {
       const projectId = decodeURIComponent(pathname.replace('/api/projects/', ''));
       const project = getProject(database, projectId);
       if (!project) {
-        writeJson(res, 404, { error: 'Project not found' });
+        writeJson(res, 404, { error: 'Project not found' }, { corsOrigin });
         return;
       }
 
-      writeJson(res, 200, { project });
+      writeJson(res, 200, { project }, { corsOrigin });
       return;
     }
 
@@ -171,7 +252,7 @@ export function createAppServer({ database, port = 8787 } = {}) {
     server,
     listen() {
       return new Promise((resolve) => {
-        server.listen(port, () => resolve(server.address()));
+        server.listen(port, host, () => resolve(server.address()));
       });
     },
     close() {

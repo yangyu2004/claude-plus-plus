@@ -573,8 +573,22 @@ function backupExistingPath(filePath, backupDir) {
 }
 
 function writeJsonFile(filePath, value) {
+  writeFileAtomic(filePath, `${JSON.stringify(value, null, 2)}\n`);
+}
+
+function writeFileAtomic(filePath, content) {
   ensureDir(path.dirname(filePath));
-  fs.writeFileSync(filePath, `${JSON.stringify(value, null, 2)}\n`, 'utf8');
+  const tempPath = path.join(
+    path.dirname(filePath),
+    `.${path.basename(filePath)}.tmp-${process.pid}-${crypto.randomUUID()}`
+  );
+  try {
+    fs.writeFileSync(tempPath, content, 'utf8');
+    fs.renameSync(tempPath, filePath);
+  } catch (error) {
+    fs.rmSync(tempPath, { force: true });
+    throw error;
+  }
 }
 
 function writeRestoreEntry(entry, backupDir, overwrite = false) {
@@ -584,7 +598,10 @@ function writeRestoreEntry(entry, backupDir, overwrite = false) {
 
   const backups = [
     backupExistingPath(entry.metadataPath, backupDir),
-    backupExistingPath(entry.sessionDir, backupDir)
+    backupExistingPath(entry.claudeConfigPath, backupDir),
+    backupExistingPath(entry.auditPath, backupDir),
+    backupExistingPath(entry.transcriptPath, backupDir),
+    backupExistingPath(entry.transcriptAliasPath, backupDir)
   ].filter(Boolean);
 
   ensureDir(entry.outputsDir);
@@ -593,10 +610,10 @@ function writeRestoreEntry(entry, backupDir, overwrite = false) {
   ensureDir(entry.transcriptDir);
   writeJsonFile(entry.metadataPath, entry.metadata);
   writeJsonFile(entry.claudeConfigPath, entry.claudeConfig);
-  fs.writeFileSync(entry.auditPath, entry.auditJsonl, 'utf8');
-  fs.writeFileSync(entry.transcriptPath, entry.transcriptJsonl, 'utf8');
+  writeFileAtomic(entry.auditPath, entry.auditJsonl);
+  writeFileAtomic(entry.transcriptPath, entry.transcriptJsonl);
   if (entry.transcriptAliasPath !== entry.transcriptPath) {
-    fs.writeFileSync(entry.transcriptAliasPath, entry.transcriptAliasJsonl, 'utf8');
+    writeFileAtomic(entry.transcriptAliasPath, entry.transcriptAliasJsonl);
   }
 
   return {

@@ -81,3 +81,23 @@ test('skips existing official sessions unless overwrite is enabled', async () =>
   const forced = await applyOfficialDesktopRestorePlan(forcedPlan, { overwrite: true });
   assert.equal(forced.written[0].skipped, false);
 });
+
+test('backs up overwritten official metadata and transcript files', async () => {
+  const { tempDir, zipPath } = makeFixtureZip();
+  const target = setupTarget(tempDir);
+  const conversations = extractConversationsFromDocuments(readClaudeExportZip(zipPath));
+  const plan = buildOfficialDesktopRestorePlan(conversations, { ...target, limit: 1 });
+
+  await applyOfficialDesktopRestorePlan(plan);
+  fs.writeFileSync(plan.entries[0].metadataPath, '{"old":true}\n', 'utf8');
+  fs.writeFileSync(plan.entries[0].transcriptPath, 'old transcript\n', 'utf8');
+
+  const forcedPlan = buildOfficialDesktopRestorePlan(conversations, { ...target, limit: 1 });
+  const backupDir = path.join(tempDir, 'backups');
+  const forced = await applyOfficialDesktopRestorePlan(forcedPlan, { overwrite: true, backupDir });
+
+  assert.equal(forced.written[0].skipped, false);
+  assert.equal(fs.readFileSync(path.join(backupDir, path.basename(plan.entries[0].metadataPath)), 'utf8'), '{"old":true}\n');
+  assert.equal(fs.readFileSync(path.join(backupDir, path.basename(plan.entries[0].transcriptPath)), 'utf8'), 'old transcript\n');
+  assert.deepEqual(fs.readdirSync(path.dirname(plan.entries[0].transcriptPath)).filter((name) => name.includes('.tmp-')), []);
+});

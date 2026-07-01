@@ -7,7 +7,6 @@ import { extractConversationsFromDocuments } from './normalize.js';
 import {
   createImportRun,
   countProjects,
-  listImportedSourceHashes,
   replaceConversationMessages,
   saveConversation,
   saveProjects,
@@ -27,37 +26,51 @@ export function hashFile(filePath) {
 
 export function importArchiveFromFile(database, zipPath) {
   const sourceHash = hashFile(zipPath);
-  if (listImportedSourceHashes(database).includes(sourceHash)) {
-    return { imported: 0, skipped: true, sourceHash };
-  }
-
   const documents = readClaudeExportZip(zipPath);
   const conversations = extractConversationsFromDocuments(documents);
   const metadata = extractMetadata(documents);
   const projects = metadata.projectsJson || [];
   const importedAt = new Date().toISOString();
 
-  withTransaction(database, () => {
-    createImportRun(database, zipPath, sourceHash, importedAt);
+  const result = withTransaction(database, () => {
+    const claimed = createImportRun(database, zipPath, sourceHash, importedAt);
+    if (!claimed) {
+      return { imported: 0, skipped: true, reason: 'already-imported', sourceHash };
+    }
+
     saveImportMetadata(database, sourceHash, metadata);
     saveProjects(database, projects);
     for (const conversation of conversations) {
       saveConversation(database, conversation, sourceHash);
       replaceConversationMessages(database, conversation);
     }
+
+    return { imported: conversations.length, skipped: false, sourceHash };
   });
 
-  return { imported: conversations.length, skipped: false, sourceHash };
+  return result;
+}
+
+function safeArchiveFileName(fileName) {
+  const normalized = path.basename(String(fileName || 'upload.zip').replaceAll('\\', '/'));
+  const safeName = normalized.replace(/[^\p{L}\p{N}._ -]/gu, '-').trim();
+  if (/^\.*$/.test(safeName)) {
+    return 'upload.zip';
+  }
+
+  return safeName || 'upload.zip';
 }
 
 export function importArchiveFromBuffer(database, buffer, fileName = 'upload.zip') {
   const sourceHash = hashBuffer(buffer);
-  if (listImportedSourceHashes(database).includes(sourceHash)) {
-    return { imported: 0, skipped: true, sourceHash };
-  }
 
   const tempDir = fs.mkdtempSync(path.join(os.tmpdir(), 'claude-history-rescue-'));
-  const tempPath = path.join(tempDir, fileName);
+  const tempPath = path.resolve(tempDir, safeArchiveFileName(fileName));
+  const relativeTempPath = path.relative(tempDir, tempPath);
+  if (relativeTempPath.startsWith('..') || path.isAbsolute(relativeTempPath)) {
+    throw new Error('Invalid archive file name');
+  }
+
   fs.writeFileSync(tempPath, buffer);
 
   try {
